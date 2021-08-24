@@ -8,7 +8,12 @@ function getHttpParser() {
   let bodyStart = false;
   let body = null;
   let end = false;
+  let currentTcpPacketNum = -1;
   return function parse(chunk) {
+    for (const value of chunk) {
+      console.log(value.toString(16));
+    }
+    currentTcpPacketNum++;
     let lineStart = 0,
       lineEnd = 0;
     while (lineEnd < chunk.length) {
@@ -21,38 +26,51 @@ function getHttpParser() {
         const length = lineEnd - lineStart + 1;
         let lineBuf = Buffer.alloc(length);
 
-        chunk.copy(lineBuf, 0, lineStart, lineEnd);
-        lineBuf = removeCRLF(lineBuf); //去掉换行符
+        chunk.copy(lineBuf, 0, lineStart, lineEnd + 1);
+        console.log(lineBuf);
 
+        lineBuf = removeCRLF(lineBuf); //去掉换行符
         if (currentLine === 0) {
           parseStarttLine(lineBuf);
         } else if (lineBuf.length === 0) {
           //空白行代表结束或者http报文的body开始
           const method = httpMessage.method.toLowerCase();
-
-          if (method === "post" || method === "put") {
+          if ((method === "post" || method === "put") && bodyStart === false) {
             //只有POST和PUT方法可能有body，其它http方法均不带body
             bodyStart = true;
           } else {
             end = true;
+            break;
           }
         } else if (!bodyStart) {
           parseHeaders(lineBuf);
+        }
+        lineStart = lineEnd + 1;
+        currentLine++;
+      } else if (bodyStart) {
+        let bodyLength;
+        if (currentTcpPacketNum > 0) {
+          //如果当前请求分包传输且不是第一个包
+          bodyLength = chunk.length;
+          lineStart = 0;
         } else {
-          if (bodyStart) {
-            body = Buffer.concat([body, lineBuf]);
-          }
-
-          const contentLength = httpMessage.header["content-length"];
-          if (contentLength && body.length === contentLength) {
-            end = true;
-          }
-          httpMessage.body = body;
+          bodyLength = chunk.length - lineStart;
         }
 
-        lineEnd++;
-        lineStart = lineEnd;
-        currentLine++;
+        const lastLineBuf = Buffer.alloc(bodyLength);
+        chunk.copy(lastLineBuf, 0, lineStart, chunk.length);
+        console.log("lineStart:", lineStart);
+        console.log("bodyLength:", bodyLength);
+
+        console.log("last line:", lastLineBuf);
+        body = body ? Buffer.concat([body, lastLineBuf]) : lastLineBuf;
+        //post和put请求需要携带content-length信息，没有将无法判断报文在哪里结束
+        const contentLength = httpMessage.header["content-length"];
+        if (contentLength && body.length === contentLength) {
+          end = true;
+        }
+        httpMessage.body = body;
+        break;
       }
       lineEnd++;
     }

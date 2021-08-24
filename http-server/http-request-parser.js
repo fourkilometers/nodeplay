@@ -10,9 +10,6 @@ function getHttpParser() {
   let end = false;
   let currentTcpPacketNum = -1;
   return function parse(chunk) {
-    for (const value of chunk) {
-      console.log(value.toString(16));
-    }
     currentTcpPacketNum++;
     let lineStart = 0,
       lineEnd = 0;
@@ -27,7 +24,6 @@ function getHttpParser() {
         let lineBuf = Buffer.alloc(length);
 
         chunk.copy(lineBuf, 0, lineStart, lineEnd + 1);
-        console.log(lineBuf);
 
         lineBuf = removeCRLF(lineBuf); //去掉换行符
         if (currentLine === 0) {
@@ -56,16 +52,13 @@ function getHttpParser() {
         } else {
           bodyLength = chunk.length - lineStart;
         }
-
         const lastLineBuf = Buffer.alloc(bodyLength);
         chunk.copy(lastLineBuf, 0, lineStart, chunk.length);
-        console.log("lineStart:", lineStart);
-        console.log("bodyLength:", bodyLength);
 
-        console.log("last line:", lastLineBuf);
         body = body ? Buffer.concat([body, lastLineBuf]) : lastLineBuf;
         //post和put请求需要携带content-length信息，没有将无法判断报文在哪里结束
-        const contentLength = httpMessage.header["content-length"];
+        const contentLength = parseInt(httpMessage.header["content-length"]);
+
         if (contentLength && body.length === contentLength) {
           end = true;
         }
